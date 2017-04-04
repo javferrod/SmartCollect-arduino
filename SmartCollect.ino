@@ -19,25 +19,27 @@
 
 // libraries
 #include "LowPower.h"
-#include <GSM.h>
 #include <ArduinoJson.h>
+#include "SIM900.h"
 
-
+#define CONNECTIONS_ATTEMPS 5
 #define EchoPin 5   // pin 5 recibe el eco de la señal enviada para calcular el tiempo entre ambas 
 #define TriggerPin 6 // pin 6 para el trigger , tiene que estar activo durante 10us para activar el sensor
 int distancias[24]; 
 byte hora = 0; 
 int cal_dist; 
-String out;
+char* out;
 const byte lim_dist= 20;
 byte lleno = 0;
 byte envio = 0;
 int tiempo = 1; //Multiplo por el que se muliplican lo 8 segundos que duerme el arduino. Para una hora debe ser 450
 
+
 void setup() {
   pinMode(TriggerPin, OUTPUT);
   pinMode(EchoPin, INPUT);
-  Serial.begin (9600);
+  Serial.begin (19200);
+
  }
 
 void loop() {
@@ -75,11 +77,12 @@ void loop() {
 
   if(envio == 1){
       //Aqui hay que enviar
-      //createJson();  
+      createJSONManual();  
       Serial.println("Hay que enviar"); 
       Serial.println(out); 
       delay(3000);
       //connect_GPRS();
+      send_data();
       resetear();
       hora = 0;
       envio = 0;
@@ -106,6 +109,27 @@ int ultrasonidos() {
   distanceCm = duration / 29.2 / 2; //se pasa el tiempo a distancia en funcion de la Vsonido y /2 porque es ida y vuelta
   return distanceCm;     // se devuelve la distancia 
 }
+
+
+void createJSONManual(){
+  String out = "{measures: [";
+  
+  for (int i = 0; i < 24 ;i++){
+      out.concat("{index: ");
+      out.concat(i);
+      out.concat(", filling:");
+      out.concat(distancias[i]);
+      if(i == 23){
+        out.concat("}");
+      }else {
+        out.concat("},");
+      }
+      
+  }
+  out.concat("]}");
+  Serial.println(out);
+}
+
 
 
 void dormir(){
@@ -138,52 +162,6 @@ int mejordistancia(){
   return aux_dist;
 }
 
-/*
-void createJson(){ 
-  //Function that converts data to json  
-  out = "";
-  int aux = hora +1;
-  int dist;
-  Serial.println(aux);
-  delay(1000);
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.createObject();
-  JsonArray& measures = root.createNestedArray("measures");
- 
-  for (int i = 0; i < aux ;i++){
-    //Serial.println(distancias[i]);
-    dist = distancias[i];
-    Serial.println(dist);
-    
-     JsonObject& objeto= jsonBuffer.createObject();
-     objeto["index"] = i;
-     objeto["filling"]= dist;
-     measures.add(objeto);   
-     delay(500);
-  }
-  root.printTo(out);
-  delay(7000);
-  
-}
-*/
-
-
-/*
-void createJson(){ 
-  out = "";
-  //Function that converts data to json  
-  Serial.println(hora);
-  Serial.println(cal_dist);
-  StaticJsonBuffer<200> jsonBuffer;
-  JsonObject& root = jsonBuffer.createObject();
-  JsonArray& measures = root.createNestedArray("measures");
-  JsonObject& NestedObject = measures.createNestedObject();
-  NestedObject["index"] = String(hora);
-  NestedObject["filling"]= String(cal_dist);
-  root.printTo(out);
-  delay(2000);
-}
-*/
 
 void resetear(){
   //Function that resets variables 
@@ -216,79 +194,44 @@ void imprimir_distancias(){
       Serial.println();
 }
 
+void freeRam () 
+{
+  extern int __heap_start, *__brkval; 
+  int v;
+  Serial.print(F("Memoria: ")); 
+  Serial.println((int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
+}
 
 
-/*
-// Esto es lo que tiene loren en el setup();
-void connect_GPRS(){
+void send_data(){
 
-  // PIN Number Card
-#define PINNUMBER "" //"1800"
+  SIM900 sim900 (7, 8);
+  boolean success = false;
+  int attemps = 0;
 
-// APN data
-#define GPRS_APN     "freedompop.foggmobile.com" // "movistar.es" //"internet.mundo-r.com" // GPRS APN
-#define GPRS_LOGIN    "" // "MOVISTAR"    //  GPRS login
-#define GPRS_PASSWORD "" // "MOVISTAR" // GPRS password
+  sim900.init();
+  Serial.println(F("[SIM900] started"));
 
-// initialize the library instance
-  GSMClient client;
-  GPRS gprs;
-  GSM gsmAccess;
-
-// URL, path & port
-  char server[] = "smartcollect.duckdns.org";
-  char path[] = "/container/update/1";
-  int port = 3000; // port 80 is the default for HTTP
-
-   Serial.println("Starting Arduino web client.");
-    // connection state
-    boolean notConnected = true;
-  
-    // After starting the modem with GSM.begin()
-    // attach the shield to the GPRS network with the APN, login and password
-    while (notConnected) {
-      if ((gsmAccess.begin(PINNUMBER) == GSM_READY) & (gprs.attachGPRS(GPRS_APN, GPRS_LOGIN, GPRS_PASSWORD) == GPRS_READY)) {
-          notConnected = false;
-          Serial.println("connecting...");
-          
-          // if you get a connection, report back via serial:
-          if (client.connect(server, port)) { 
-            // Making a POST request to our server
-            //Set Headers
-            client.print("POST /container/update/1 ");
-            client.println("HTTP/1.1");
-            client.println("Host:  smartcollect.duckdns.org");
-            client.println("User-Agent: Arduino-SmartCollect/1.0");
-            client.println("Connection: close");
-            client.println("Content-Type: application/json");
-            client.print("Content-Length: ");
-            client.println(out.length());
-            client.println();
-            //Sending Json Data
-            client.println(out);
-            client.println();
-          } else {
-            // if you didn't get a connection to the server:
-            Serial.println("connection failed");
-            delay(1000);
-          }
-
-          boolean test = true;
-          while(test){
-              if (client.available()) {
-                    char c = client.read();
-                    Serial.print(c);
-              }
-              // if the server's disconnected, stop the client:
-              if (!client.available() && !client.connected()) {
-                    Serial.println("disconnecting.");
-                    client.stop();
-                    test = false;
-              }
-          }
-      } else {
-        Serial.println("Not connected");
-        delay(1000);
-      }
+  while(attemps < CONNECTIONS_ATTEMPS && !success){
+    
+    if(sim900.connect_network()){
+      success = true;
+      continue;
     }
-}*/
+    
+    Serial.println(F("[SIM900] Error while connecting to network"));
+    sim900.restart();
+    attemps++;
+    delay(5000);
+  }
+
+  if(!success)
+    return;
+
+  Serial.println(F("[SIM900] connected to network"));
+  sim900.send_json(out);
+  Serial.println(F("[SIM900] package sent"));
+}
+
+
+
