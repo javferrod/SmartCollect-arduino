@@ -28,7 +28,7 @@
 int distancias[24]; 
 byte hora = 0; 
 int cal_dist; 
-char* out;
+char out[600];
 const byte lim_dist= 20;
 byte lleno = 0;
 byte envio = 0;
@@ -76,8 +76,11 @@ void loop() {
   distancias[hora] = cal_dist;
 
   if(envio == 1){
+      String aux;
       //Aqui hay que enviar
-      createJSONManual();  
+      aux = createJSONManual();
+      Serial.println(aux);
+      aux.toCharArray(out,sizeof(out));  
       Serial.println("Hay que enviar"); 
       Serial.println(out); 
       delay(3000);
@@ -111,8 +114,8 @@ int ultrasonidos() {
 }
 
 
-void createJSONManual(){
-  String out = "{measures: [";
+String createJSONManual(){
+ String out = "{measures: [";
   
   for (int i = 0; i < 24 ;i++){
       out.concat("{index: ");
@@ -127,7 +130,7 @@ void createJSONManual(){
       
   }
   out.concat("]}");
-  Serial.println(out);
+  return out;
 }
 
 
@@ -204,7 +207,8 @@ void freeRam ()
 
 
 void send_data(){
-
+  freeRam();
+  Serial.println("Send_data");
   SIM900 sim900 (7, 8);
   boolean success = false;
   int attemps = 0;
