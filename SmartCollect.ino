@@ -23,74 +23,74 @@
 #include "SIM900.h"
 
 #define CONNECTIONS_ATTEMPS 5
-#define EchoPin 5   // pin 5 recibe el eco de la señal enviada para calcular el tiempo entre ambas 
-#define TriggerPin 6 // pin 6 para el trigger , tiene que estar activo durante 10us para activar el sensor
-int distancias[24]; 
+#define ECHO_PIN 5   // pin 5 recibe el eco de la señal enviada para calcular el tiempo entre ambas 
+#define TRIGGER_PIN 6 // pin 6 para el trigger , tiene que estar activo durante 10us para activar el sensor
+#define MAX_DISTANCE 20 //Distancia a partir de la cual se envía
+
+int distances[24]; 
 byte hora = 0; 
-int cal_dist; 
-char out[600];
-const byte lim_dist= 20;
+int current_dist; 
+char* out;
 byte lleno = 0;
-byte envio = 0;
+boolean full = false;
+boolean sent = false;
 int tiempo = 1; //Multiplo por el que se muliplican lo 8 segundos que duerme el arduino. Para una hora debe ser 450
 
 
 void setup() {
-  pinMode(TriggerPin, OUTPUT);
-  pinMode(EchoPin, INPUT);
+  pinMode(TRIGGER_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
   Serial.begin (19200);
-
  }
 
 void loop() {
   
-  cal_dist = mejordistancia();
-  Serial.print("Distancia: ");
-  Serial.println(String(cal_dist));
+  current_dist = get_distance();
+  Serial.print(F("Distancia: "));
   delay(1000);
   
   if(hora > 23){
     //Codigo para comprobar que no se ha llegado a mas de 23 horas
-    desplazamiento();
+    shift_distance_array();
     hora = 23;
   }
   
-  if(lleno == 0){
-    if(cal_dist <= lim_dist){
-      Serial.println("Se ha llenado");
+  distace[hora] = current_dist;
+
+  if(full){
+    if(lleno < (cal_dist - 5)){ 
+      // Se ha vaciado
+      Serial.println(F("Se ha vaciado"));
+      delay(1000);
+      //Se ha vaciado hay que enviar      
+      full = false;
+      envio = true;      
+    }
+  }
+  else { 
+    if(cal_dist <= MAX_DISTANCE){
+      Serial.println(F("Se ha llenado"));
       delay(1000);
       lleno = cal_dist;
       //Esta lleno entonces se envia      
-      envio = 1;
-    }
-  }else { //LLeno es distinto de cero entonces hay que comprobar si se vacia
-    if(lleno < (cal_dist - 5)){ //Le restamos 5 porque puede haber poca fialibilidad
-      // Se ha vaciado
-      Serial.println("Se ha vaciado");
-      delay(1000);
-      //Se ha vaciado hay que enviar      
-      lleno = 0;
-      envio = 1;      
+      full = true;
+      sent = true;
     }
   }
-  distancias[hora] = cal_dist;
 
-  if(envio == 1){
-      String aux;
-      //Aqui hay que enviar
-      aux = createJSONManual();
-      Serial.println(aux);
-      aux.toCharArray(out,sizeof(out));  
-      Serial.println("Hay que enviar"); 
-      Serial.println(out); 
-      delay(3000);
-      //connect_GPRS();
-      send_data();
-      resetear();
-      hora = 0;
-      envio = 0;
-  }else{
-    Serial.println("No se envia");    
+  if(envio){
+    //Aqui hay que enviar
+    createJSONManual();  
+    Serial.println(F("Hay que enviar")); 
+    Serial.println(out); 
+    delay(3000);
+    //connect_GPRS();
+    send_data();
+    resetear();
+    sent = false;
+  }
+  else{
+    Serial.println(F("No se envia"));    
     hora++;    
   }
   dormir();
@@ -103,34 +103,32 @@ void loop() {
 int ultrasonidos() {
   //Function that interacts with the ultrasonic sensor  
   long duration, distanceCm; 
-  digitalWrite(TriggerPin, LOW);  //se define el pulso del trigger para activar el sensor 4us bajo
+  digitalWrite(TRIGGER_PIN, LOW);  //se define el pulso del trigger para activar el sensor 4us bajo
   delayMicroseconds(4);           //para obtener un disparo limpio y 10 us alto que es lo que define el fabricante 
-  digitalWrite(TriggerPin, HIGH);
+  digitalWrite(TRIGGER_PIN, HIGH);
   delayMicroseconds(10);
-  digitalWrite(TriggerPin, LOW);
-  duration = pulseIn(EchoPin, HIGH);   // mide el tiempo entre pulsos en us
+  digitalWrite(TRIGGER_PIN, LOW);
+  duration = pulseIn(ECHO_PIN, HIGH);   // mide el tiempo entre pulsos en us
   distanceCm = duration / 29.2 / 2; //se pasa el tiempo a distancia en funcion de la Vsonido y /2 porque es ida y vuelta
   return distanceCm;     // se devuelve la distancia 
 }
 
 
-String createJSONManual(){
- String out = "{measures: [";
+void createJSONManual(){
+  String out = "{measures: [";
   
   for (int i = 0; i < 24 ;i++){
       out.concat("{index: ");
       out.concat(i);
       out.concat(", filling:");
       out.concat(distancias[i]);
-      if(i == 23){
+      if(i == 23)
         out.concat("}");
-      }else {
+      else 
         out.concat("},");
-      }
-      
   }
   out.concat("]}");
-  return out;
+  Serial.println(out);
 }
 
 
@@ -138,7 +136,7 @@ String createJSONManual(){
 void dormir(){
   //Function that sends the arduino to sleep
   //Wait 16 seg
-  Serial.println("Esta durmiendo");
+  Serial.println(F("Esta durmiendo"));
   delay(1000);
   for(int i = 0; i < tiempo; i++){
      LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);     
@@ -146,7 +144,7 @@ void dormir(){
 }
 
 
-int mejordistancia(){
+int get_distance(){
   // Function that calculates the best distance  
   int aux_dist,dist1,dist2,dist3;
   dist1 = ultrasonidos();
@@ -171,18 +169,18 @@ void resetear(){
   for (int i = 0; i < 24; i++){
     distancias[i] = 0;
   }
+  horas = 0;
   imprimir_distancias();
 }
 
 
-void desplazamiento(){
+void shift_distance_array(){
   //Funcion que se usara cuando llegue una hora mayor de 23
   //Se desplazan las medidas hacia la izquierda
     int aux_cad[25] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     for(int t = 0; t < 24; t++){
       aux_cad[t] = distancias[t];      
     }
-    resetear();
     for(int i = 0; i < 23; i++){
         distancias[i] = aux_cad[i+1];
     }
@@ -207,8 +205,7 @@ void freeRam ()
 
 
 void send_data(){
-  freeRam();
-  Serial.println("Send_data");
+
   SIM900 sim900 (7, 8);
   boolean success = false;
   int attemps = 0;
