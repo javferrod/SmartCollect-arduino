@@ -44,6 +44,9 @@ void setup() {
   pinMode(TRIGGER_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   Serial.begin (19200);
+  Serial.println(F("Desde el setup() llamamos a dormir()"));
+  dormir();
+  Serial.println(F("Volvemos de dormir"));
  }
 
 void loop() {
